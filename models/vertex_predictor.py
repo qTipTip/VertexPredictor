@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from models.aux_models import pool_2, pool_3, conv_4, conv_5, skip_pool_2, skip_pool_3, skip_conv_4, skip_conv_5, \
     fuse_features
@@ -36,7 +37,7 @@ class ImageEncoder(nn.Module):
     def forward(self, x):
         """
         Compute one forward pass in the network.
-        :param x: input batch of size (B, 3, 128, 128)
+        :param x: input batch of size (B, 3, 224, 224)
         :return: image features of size (B, 128, 28, 28)
         """
 
@@ -54,3 +55,51 @@ class ImageEncoder(nn.Module):
         fused = self.fused_features(fused)
 
         return fused
+
+
+def boundary_layer():
+    return nn.Sequential(
+        nn.Conv2d(in_channels=128, out_channels=32, kernel_size=3, padding=1, stride=1),
+        nn.GroupNorm(num_groups=32, num_channels=128),
+        nn.ReLU(),
+    )
+
+
+def vertex_layer():
+    return nn.Sequential(
+        nn.Linear(in_features=784 + 28 * 28 * 32, out_features=784),
+        nn.Sigmoid()
+    )
+
+
+class VertexPredictor(nn.Module):
+    """
+    This class uses the extracted image features from the ImageEncoder-class, and predicts
+    a set of vertices, their connectivity (edges), and which vertex is the first in the polygon.
+    """
+
+    def __init__(self, output_resolution=28):
+        super().__init__()
+
+        self.output_resolution = output_resolution
+        self.image_encoder = ImageEncoder(output_resolution=output_resolution)
+        self.boundary_layer = boundary_layer()
+        self.boundary_fc = nn.Linear(32 * 28 * 28, out_features=784)
+        self.vertex_layer = vertex_layer()
+
+    def forward(self, x):
+        """
+        Compute one forward pass in the network.
+        :param x: input batch of size (B, 3, 224, 224)
+        :return:
+        """
+
+        image_features = self.image_encoder(x)
+        boundary_features = self.boundary_layer(image_features)
+        boundary_features = boundary_features.view(boundary_features.shape[0], -1)
+        boundary_features = F.sigmoid(self.boundary_fc(boundary_features))
+
+        boundary_and_image = torch.cat((image_features, boundary_features))
+        vertex_features = F.sigmoid(self.vertex_layer(boundary_and_image))
+
+        print(vertex_features)
