@@ -35,6 +35,13 @@ def create_bounding_box_from_polygon(polygon, original_image_size, padding_facto
     return np.concatenate((ll_corner, ur_corner), axis=0)
 
 
+def trivial_area(bounding_box, tol=1.0e-15):
+    a, b, c, d = bounding_box
+    if abs(c - a) < tol or abs(d - b) < tol:
+        return True
+    return False
+
+
 def process_cityscapes_dataset(root_folder='.', data_set='train', output_folder=None, padding_factor=0.15,
                                output_image_size=224):
     """
@@ -84,6 +91,9 @@ def process_cityscapes_dataset(root_folder='.', data_set='train', output_folder=
 
             bounding_box = create_bounding_box_from_polygon(polygon, [image_w, image_h], padding_factor=padding_factor)
 
+            if trivial_area(bounding_box):
+                print('Trivial bounding-box with zero area: SKIPPING')
+                continue
             resize_crop_and_save_image(bounding_box, image_f, output_image_size, output_folder_path,
                                        cropped_image_counter)
             resize_translate_and_save_polygon(bounding_box, output_image_size, polygon, output_folder_path,
